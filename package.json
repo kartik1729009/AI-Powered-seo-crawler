@@ -1,0 +1,42 @@
+{
+  "name": "boilerplatebackend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "engine-dev": "ts-node ./src/controller/engine/workers/index.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@types/dotenv": "^6.1.1",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/mongoose": "^5.11.96",
+    "@types/node": "^25.2.3",
+    "@types/stopword": "^2.0.3",
+    "bull-board": "^1.7.2",
+    "bullmq": "^5.67.3",
+    "ioredis": "^5.9.2",
+    "nodemon": "^3.1.11",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@bull-board/api": "^6.17.0",
+    "@bull-board/express": "^6.17.0",
+    "@google/genai": "^1.42.0",
+    "axios": "^1.13.5",
+    "cheerio": "^1.2.0",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "fast-xml-parser": "^5.3.5",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.0.2",
+    "natural": "^8.1.0",
+    "rake-js": "^0.1.1",
+    "stopword": "^3.1.5"
+  }
+}
