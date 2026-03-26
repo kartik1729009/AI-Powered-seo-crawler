@@ -6,7 +6,7 @@ import { connectDB } from "./config/db";
 import { autoCrudBuilder } from "./controller/crudBuilder.controller.ts/autoRouteBuilder.controller";
 import { model } from "./model/exportModel.model"
 import { bullBoardRouter } from "./controller/engine/monitor";
-import  domainRouter  from "./route/domain.route";
+import domainRouter from "./route/domain.route";
 import domainNodeInsightsRouter from "./route/domainInsights.route";
 import domainNodeRouter from "./route/domainNode.route";
 import domainPageRouter from "./route/domainPage.route";
@@ -14,8 +14,8 @@ const appLogger = createLogger("APP");
 const dbLogger = createLogger("DATABASE");
 const app = express();
 app.use(cors({
-  origin: 'http://localhost:5173',  
-  credentials: true,                
+  origin: 'http://localhost:5173',
+  credentials: true,
 }));
 app.use(express.json());
 
@@ -38,6 +38,7 @@ const startServer = async () => {
     await connectDB();
     app.listen(env.PORT, () => {
       appLogger.info(`Server started on port ${env.PORT}`);
+      console.log("server running successfully");
     });
   } catch (err) {
     appLogger.error("Failed to start server", err);
@@ -54,5 +55,6 @@ process.on("unhandledRejection", (reason) => {
 
 process.on("uncaughtException", (err) => {
   appLogger.error("Uncaught Exception", err);
+  console.log("uncaught error happened")
   process.exit(1);
 });
