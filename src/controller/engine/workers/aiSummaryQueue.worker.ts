@@ -1,41 +1,45 @@
-import dotenv from "dotenv"
-dotenv.config()
-import { Worker, Job } from "bullmq"
-import { dbFindOne, dbUpdate } from "../../../utils/dbUtils"
+import dotenv from "dotenv";
+dotenv.config();
+import { Worker, Job } from "bullmq";
+import { dbFindOne, dbUpdate } from "../../../utils/dbUtils";
 import { DomainPage } from "../../../model/domainPage.model";
 import { generateSeoReport } from "../../../utils/geminiIntegration";
 import { redis } from "../../../config/redisConnect";
+
 const worker = new Worker(
     "aiSummaryQueue",
     async (job: Job) => {
         if (!job.data) {
-            throw new Error("Job not present")
+            throw new Error("Job data not present");
         }
-        const { domainPageId } = job.data;
+
+        const { domainPageId, prompt } = job.data;
+
+        if (!prompt) {
+            throw new Error("Prompt not provided in job data");
+        }
+
         const page = await dbFindOne(DomainPage, { _id: domainPageId });
         if (!page) {
             throw new Error("domainPage not found");
         }
-        const formattedChecks = page.perCheckSeoScore.map((check: any) => ({
-            name: check.seoCheck.name,
-            category: check.seoCheck.category,
-            description: check.seoCheck.description,
-            weight: check.seoCheck.weight,
-            priority: check.seoCheck.priority,
-            score: check.score
-        }));
-        const allScores = {
-            seoChecks: formattedChecks,
-            technical: page.technicalSeo,
-            overallScore: page.overallScore
-        }
-        const generateSeo = await generateSeoReport(allScores);
+
+        // Generate SEO summary using prompt from job
+        const generateSeo = await generateSeoReport(prompt);
+
         await dbUpdate(
             DomainPage,
-            { aiSummary: generateSeo },
+            {
+                aiSummary: generateSeo,
+                "processing.pageSeoQueue.status": "completed",
+                "processing.overallStatus": "completed",
+            },
             { _id: domainPageId }
         );
+
+        console.log("Generated summary:", generateSeo);
     },
     { connection: redis }
-)
+);
+
 export default worker;

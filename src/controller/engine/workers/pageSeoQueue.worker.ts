@@ -54,55 +54,96 @@ const pageSeoWorker = new Worker(
 
         if (!html) throw new Error("HTML not found");
 
-        const page = await dbFindOne(DomainPage, { domainPageUrl: url });
-        
-        if (!page) throw new Error("DomainPage not found");
-
-        const $ = cheerio.load(html);
-
-        const checks = await dbFind(SeoCheck, { isActive: true });
-
-        const perCheckResults: any[] = [];
-        let totalWeight = 0;
-        let totalWeightedScore = 0;
-
-        for (const check of checks) {
-            if (!check.selector) continue;
-
-            const value = extractValue($, check);
-            const normalizedScore = calculateScore(value, check);
-
-            const weightedScore = normalizedScore * check.weight;
-
-            totalWeight += check.weight;
-            totalWeightedScore += weightedScore;
-
-            perCheckResults.push({
-                seoCheck: check._id,
-                score: normalizedScore,
-            });
-        }
-
-        const finalScore =
-            totalWeight > 0 ? totalWeightedScore / totalWeight : 0;
-
-        const finalPercentage = Math.round(finalScore * 100);
-
         await dbUpdate(
             DomainPage,
             {
-                seoScore: finalPercentage,
-                perCheckSeoScore: perCheckResults,
-                overallScore: finalPercentage
+                "processing.pageSeoQueue.status": "inProgress",
+                "processing.pageSeoQueue.startedAt": new Date(),
+                "processing.overallStatus": "processing"
             },
-            { domainPageUrl : url }
+            { domain: domainId, domainPageUrl: url },
+            { upsert: true }
         );
-        await siteSeoQueue.add("site", {
-            domainId: page.domain
-        });
 
-        return { success: true, score: finalPercentage };
+        try {
+
+            const page = await dbFindOne(DomainPage, { domainPageUrl: url });
+
+            if (!page) throw new Error("DomainPage not found");
+
+            const $ = cheerio.load(html);
+
+            const checks = await dbFind(SeoCheck, { isActive: true });
+
+            const perCheckResults: any[] = [];
+            let totalWeight = 0;
+            let totalWeightedScore = 0;
+
+            for (const check of checks) {
+                if (!check.selector) continue;
+
+                const value = extractValue($, check);
+                const normalizedScore = calculateScore(value, check);
+
+                const weightedScore = normalizedScore * check.weight;
+
+                totalWeight += check.weight;
+                totalWeightedScore += weightedScore;
+
+                perCheckResults.push({
+                    seoCheck: check._id,
+                    score: normalizedScore,
+                });
+            }
+
+            const finalScore =
+                totalWeight > 0 ? totalWeightedScore / totalWeight : 0;
+
+            const finalPercentage = Math.round(finalScore * 100);
+
+            await dbUpdate(
+                DomainPage,
+                {
+                    seoScore: finalPercentage,
+                    perCheckSeoScore: perCheckResults,
+                    overallScore: finalPercentage
+                },
+                { domainPageUrl: url }
+            );
+
+            await dbUpdate(
+                DomainPage,
+                {
+                    "processing.pageSeoQueue.status": "completed",
+                    "processing.pageSeoQueue.completedAt": new Date(),
+                    "processing.progress": 80
+                },
+                { domain: domainId, domainPageUrl: url }
+            );
+
+            await siteSeoQueue.add("site", {
+                domainId: page.domain
+            });
+
+            return { success: true, score: finalPercentage };
+
+        } catch (error: any) {
+
+            await dbUpdate(
+                DomainPage,
+                {
+                    "processing.pageSeoQueue.status": "failed",
+                    "processing.pageSeoQueue.completedAt": new Date(),
+                    "processing.pageSeoQueue.error": error.message,
+                    "processing.overallStatus": "failed"
+                },
+                { domain: domainId, domainPageUrl: url }
+            );
+
+            throw error;
+        }
     },
     { connection: redis }
 );
+
 export default pageSeoWorker;

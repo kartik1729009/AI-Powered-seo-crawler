@@ -1,53 +1,69 @@
 import { Request, Response } from "express";
-import * as loggers from "../utils/loggers";
-import { SystemError } from "../error/systemError";
-import { ErrorContext, ErrorSeverity } from "../error/error.types";
-import { apiResponseHandler } from "../utils/apiResponseHandler";
-import { dbFind } from "../utils/dbUtils";
 import { DomainNode } from "../model/domainNode.model";
 import { insightsQueue } from "./engine/queues";
-export async function nodeInsights(req: Request, res: Response) {
+import { dbFindOne, dbFind } from "../utils/dbUtils";
+
+export const nodeInsights = async (req: Request, res: Response) => {
     try {
         const { domainNodes } = req.body;
-        const domainId = (req as any).user?.domainId;
-        if (!domainId) {
-            throw new Error("Unauthorized: domain not found in token");
+        if (!domainNodes || !Array.isArray(domainNodes) || domainNodes.length === 0) {
+            return res.status(400).json({ message: "domainNodes required" });
         }
-        if (!Array.isArray(domainNodes) || domainNodes.length === 0) {
-            throw new Error("domainNodes must be a non-empty array");
+
+        // Fetch all nodes
+        const nodes = await dbFind(DomainNode, { _id: { $in: domainNodes } });
+
+        if (!nodes || nodes.length === 0) {
+            return res.status(404).json({ message: "No nodes found" });
         }
-        const validNodes = await dbFind(DomainNode, {
-            _id: { $in: domainNodes },
-            domain: domainId,
+
+        // Group nodes by domain
+        const nodesByDomain: Record<string, any[]> = {};
+        for (const node of nodes) {
+            const domainId = node.domain.toString();
+            if (!nodesByDomain[domainId]) {
+                nodesByDomain[domainId] = [];
+            }
+            nodesByDomain[domainId].push(node);
+        }
+
+        const BATCH_SIZE = 50;
+        let totalEnqueued = 0;
+
+        // Process each domain separately
+        for (const [domainId, domainNodes] of Object.entries(nodesByDomain)) {
+            // Fetch base node for this domain
+            const baseNode = await dbFindOne(DomainNode, {
+                domain: domainId,
+                type: "baseNode"
+            });
+
+            if (!baseNode) {
+                console.warn(`Base node not found for domain ${domainId}, skipping...`);
+                continue;
+            }
+
+            // Process nodes in batches
+            for (let i = 0; i < domainNodes.length; i += BATCH_SIZE) {
+                const batch = domainNodes.slice(i, i + BATCH_SIZE);
+
+                await insightsQueue.add("calculateInsights", {
+                    domainNodeIds: batch.map((n) => n._id),
+                    comparedWithNodeId: baseNode._id,
+                });
+
+                totalEnqueued += batch.length;
+            }
+        }
+
+        return res.status(200).json({
+            message: "Enqueued insights jobs",
+            totalNodes: nodes.length,
+            totalEnqueued,
+            domainsProcessed: Object.keys(nodesByDomain).length
         });
-        if (!validNodes.length) {
-            throw new Error("No valid domain nodes found");
-        }
-        await Promise.all(
-            validNodes.map((node: any) =>
-                insightsQueue.add("generateInsight", {
-                    domainId,
-                    domainNodeId: node._id,
-                })
-            )
-        );
-        return apiResponseHandler(
-            res,
-            "Insights queued successfully"
-        );
-    } catch (err: any) {
-        loggers.apiLogger.info("nodeInsights route: failed");
-        apiResponseHandler(res, undefined, err);
-        throw new SystemError({
-            message: "Failed to enqueue insightsQueue",
-            context: ErrorContext.API,
-            source: "API",
-            severity: ErrorSeverity.HIGH,
-            metadata: {
-                operation: "nodeInsights enqueue",
-                payload: req.body,
-                originalError: err.message,
-            },
-        });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ message: "Failed to enqueue insights" });
     }
-}
+};

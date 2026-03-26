@@ -52,13 +52,14 @@ export function findOneBuilder<T>(
     router.post(`/${modelName}/findOne`, async (req, res) => {
         try {
             const field = req.body;
-
-            // Prevent empty query
             if (!field || Object.keys(field).length === 0) {
                 throw new Error("At least one field is required to find a document");
             }
-
-            const document = await dbFindOne(model, field);
+            let query = model.findOne(field);
+            if (model.modelName === "DomainNode") {
+                query = query.populate("domain", "domainUrl");
+            }
+            const document = await query.exec();
 
             if (!document) {
                 return res.status(404).json({
@@ -70,7 +71,6 @@ export function findOneBuilder<T>(
             }
 
             return apiResponseHandler(res, document);
-
         } catch (err: any) {
             loggers.apiLogger.error(
                 "Error in findOneBuilder route",

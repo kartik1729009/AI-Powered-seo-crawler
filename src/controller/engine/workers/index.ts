@@ -7,7 +7,7 @@ import technicalSeoWorker from "./technicalSeoQueue.worker"
 import pageSeoWorker from "./pageSeoQueue.worker";
 import sitemapSeoWorker from "./siteSeoQueue.worker";
 import aiSummaryQueueWorker from "./aiSummaryQueue.worker";
-import { insightsQueueWorker } from "./insightsQueue.worker";
+import insightsQueueWorker  from "./insightsQueue.worker";
 import { connectDB } from "../../../config/db";
 
 async function start() {
