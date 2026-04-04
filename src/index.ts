@@ -13,8 +13,9 @@ import domainPageRouter from "./route/domainPage.route";
 const appLogger = createLogger("APP");
 const dbLogger = createLogger("DATABASE");
 const app = express();
+const PORT = process.env.PORT || 3000
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: '*',
   credentials: true,
 }));
 app.use(express.json());
@@ -33,11 +34,12 @@ app.use("/domain", domainRouter);
 app.use('/domainPage', domainPageRouter);
 app.use('/domainNode', domainNodeRouter);
 app.use('/domainNodeInsights', domainNodeInsightsRouter)
+app.use('/admin/queues', bullBoardRouter);
 const startServer = async () => {
   try {
     await connectDB();
-    app.listen(env.PORT, () => {
-      appLogger.info(`Server started on port ${env.PORT}`);
+    app.listen(PORT, () => {
+      appLogger.info(`Server started on port ${PORT}`);
       console.log("server running successfully");
     });
   } catch (err) {
@@ -45,7 +47,7 @@ const startServer = async () => {
     process.exit(1);
   }
 };
-app.use('/admin/queues', bullBoardRouter);
+
 
 startServer();
 
