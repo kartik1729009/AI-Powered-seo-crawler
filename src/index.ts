@@ -55,6 +55,5 @@ process.on("unhandledRejection", (reason) => {
 
 process.on("uncaughtException", (err) => {
   appLogger.error("Uncaught Exception", err);
-  console.log("uncaught error happened")
   process.exit(1);
 });
