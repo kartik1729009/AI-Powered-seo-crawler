@@ -10,6 +10,7 @@ import domainRouter from "./route/domain.route";
 import domainNodeInsightsRouter from "./route/domainInsights.route";
 import domainNodeRouter from "./route/domainNode.route";
 import domainPageRouter from "./route/domainPage.route";
+import {start} from "./controller/engine/workers/index"
 const appLogger = createLogger("APP");
 const dbLogger = createLogger("DATABASE");
 const app = express();
@@ -38,6 +39,7 @@ app.use('/admin/queues', bullBoardRouter);
 const startServer = async () => {
   try {
     await connectDB();
+    await start();
     app.listen(PORT, () => {
       appLogger.info(`Server started on port ${PORT}`);
       console.log("server running successfully");

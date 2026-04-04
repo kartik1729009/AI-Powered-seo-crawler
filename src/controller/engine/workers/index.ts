@@ -10,7 +10,7 @@ import aiSummaryQueueWorker from "./aiSummaryQueue.worker";
 import insightsQueueWorker  from "./insightsQueue.worker";
 import { connectDB } from "../../../config/db";
 
-async function start() {
+export async function start() {
     await connectDB();
     loggers.workerLogger.info("all workers are up");
     console.log("http://localhost:3000/admin/queues");
