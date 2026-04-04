@@ -2,10 +2,11 @@
   "name": "boilerplatebackend",
   "version": "1.0.0",
   "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "engine-dev": "ts-node ./src/controller/engine/workers/index.ts"
-  },
+"scripts": {
+  "test": "echo \"Error: no test specified\" && exit 1",
+  "engine-dev": "ts-node ./src/controller/engine/workers/index.ts",
+  "engine": "node dist/controller/engine/workers/index.js"
+},
   "keywords": [],
   "author": "",
   "license": "ISC",
