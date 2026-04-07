@@ -1,11 +1,20 @@
-import dotenv from "dotenv"
-dotenv.config()
-import { technicalSeoQueue } from "../queues"
-import { Worker, Job } from "bullmq"
-import { pageSpeedApiIntegration } from "../../../utils/pageSpeedApiIntegration"
-import { dbUpdate } from "../../../utils/dbUtils"
-import { DomainPage } from "../../../model/domainPage.model"
-import { redis } from "../../../config/redisConnect"
+import dotenv from "dotenv";
+dotenv.config();
+
+import { Worker, Job } from "bullmq";
+import { pageSpeedApiIntegration } from "../../../utils/pageSpeedApiIntegration";
+import { dbUpdate } from "../../../utils/dbUtils";
+import { DomainPage } from "../../../model/domainPage.model";
+import { redis } from "../../../config/redisConnect";
+
+const safeNumber = (val: any, fallback = 0): number =>
+    typeof val === "number" && !isNaN(val) ? val : fallback;
+
+const safeString = (val: any, fallback = ""): string =>
+    typeof val === "string" ? val : fallback;
+
+const safeBooleanFromScore = (val: any): boolean =>
+    safeNumber(val) > 0;
 
 const worker = new Worker(
     "technicalSeoQueue",
@@ -25,15 +34,16 @@ const worker = new Worker(
             { domain: domainId, domainPageUrl: url },
             { upsert: true }
         );
-
         try {
-
             const technicalSeoDetails = await pageSpeedApiIntegration(url);
 
-            if (!technicalSeoDetails?.lighthouseResult) {
-                throw new Error("Invalid PageSpeed response");
+            if (
+                !technicalSeoDetails?.lighthouseResult ||
+                !technicalSeoDetails?.lighthouseResult?.audits ||
+                !technicalSeoDetails?.lighthouseResult?.categories
+            ) {
+                throw new Error("Invalid or incomplete PageSpeed response");
             }
-
             const lighthouse = technicalSeoDetails.lighthouseResult;
             const audits = lighthouse.audits;
             const categories = lighthouse.categories;
@@ -41,59 +51,80 @@ const worker = new Worker(
 
             const technicalSeoPayload = {
                 meta: {
-                    finalUrl: lighthouse.finalUrl,
-                    fetchTime: new Date(lighthouse.fetchTime),
-                    strategy: technicalSeoDetails.configSettings?.strategy
+                    finalUrl: safeString(lighthouse.finalUrl),
+                    fetchTime: lighthouse.fetchTime
+                        ? new Date(lighthouse.fetchTime)
+                        : new Date(),
+                    strategy: safeString(
+                        technicalSeoDetails.configSettings?.strategy,
+                        "desktop"
+                    )
                 },
+
                 scores: {
-                    performance: categories.performance?.score
-                        ? categories.performance.score * 100
-                        : 0,
-                    seo: categories.seo?.score
-                        ? categories.seo.score * 100
-                        : 0,
-                    accessibility: categories.accessibility?.score
-                        ? categories.accessibility.score * 100
-                        : 0,
-                    bestPractices: categories["best-practices"]?.score
-                        ? categories["best-practices"].score * 100
-                        : 0,
+                    performance: safeNumber(categories?.performance?.score) * 100,
+                    seo: safeNumber(categories?.seo?.score) * 100,
+                    accessibility: safeNumber(categories?.accessibility?.score) * 100,
+                    bestPractices:
+                        safeNumber(categories?.["best-practices"]?.score) * 100,
                 },
                 coreWebVitals: {
-                    lcp: audits["largest-contentful-paint"]?.numericValue,
-                    fcp: audits["first-contentful-paint"]?.numericValue,
-                    cls: audits["cumulative-layout-shift"]?.numericValue,
-                    tbt: audits["total-blocking-time"]?.numericValue,
-                    speedIndex: audits["speed-index"]?.numericValue,
-                    tti: audits["interactive"]?.numericValue,
+                    lcp: safeNumber(audits["largest-contentful-paint"]?.numericValue),
+                    fcp: safeNumber(audits["first-contentful-paint"]?.numericValue),
+                    cls: safeNumber(audits["cumulative-layout-shift"]?.numericValue),
+                    tbt: safeNumber(audits["total-blocking-time"]?.numericValue),
+                    speedIndex: safeNumber(audits["speed-index"]?.numericValue),
+                    tti: safeNumber(audits["interactive"]?.numericValue),
                 },
                 fieldData: {
-                    lcpPercentile: loadingExperience?.metrics?.LARGEST_CONTENTFUL_PAINT_MS?.percentile,
-                    clsPercentile: loadingExperience?.metrics?.CUMULATIVE_LAYOUT_SHIFT_SCORE?.percentile,
-                    fidPercentile: loadingExperience?.metrics?.FIRST_INPUT_DELAY_MS?.percentile,
-                    overallCategory: loadingExperience?.overall_category
+                    lcpPercentile: safeNumber(
+                        loadingExperience?.metrics?.LARGEST_CONTENTFUL_PAINT_MS?.percentile
+                    ),
+                    clsPercentile: safeNumber(
+                        loadingExperience?.metrics?.CUMULATIVE_LAYOUT_SHIFT_SCORE?.percentile
+                    ),
+                    fidPercentile: safeNumber(
+                        loadingExperience?.metrics?.FIRST_INPUT_DELAY_MS?.percentile
+                    ),
+                    overallCategory: safeString(
+                        loadingExperience?.overall_category,
+                        "NO_DATA"
+                    )
                 },
                 security: {
-                    httpStatus: audits["http-status-code"]?.numericValue,
-                    https: audits["is-on-https"]?.score === 1
+                    httpStatus: safeNumber(
+                        audits["http-status-code"]?.numericValue
+                    ),
+                    https:
+                        safeNumber(audits["is-on-https"]?.score) === 1
                 },
                 crawlability: {
-                    robotsTxt: audits["robots-txt"]?.score === 1,
-                    documentTitle: audits["document-title"]?.score === 1,
-                    metaDescription: audits["meta-description"]?.score === 1,
-                    canonical: audits["canonical"]?.score === 1,
-                    crawlableAnchors: audits["crawlable-anchors"]?.score === 1,
+                    robotsTxt: safeBooleanFromScore(audits["robots-txt"]?.score),
+                    documentTitle: safeBooleanFromScore(audits["document-title"]?.score),
+                    metaDescription: safeBooleanFromScore(audits["meta-description"]?.score),
+                    canonical: safeBooleanFromScore(audits["canonical"]?.score),
+                    crawlableAnchors: safeBooleanFromScore(audits["crawlable-anchors"]?.score),
                 },
-                structuredData: audits["structured-data"]?.score === 1,
+                structuredData:
+                    safeNumber(audits["structured-data"]?.score) === 1,
+
                 diagnostics: {
-                    serverResponseTime: audits["server-response-time"]?.numericValue,
-                    domSize: audits["dom-size"]?.numericValue,
-                    totalByteWeight: audits["total-byte-weight"]?.numericValue,
-                    renderBlockingResources: audits["render-blocking-resources"]?.details,
-                    unusedCss: audits["unused-css-rules"]?.details,
-                    unusedJavascript: audits["unused-javascript"]?.details,
-                    networkRequests: audits["network-requests"]?.details,
-                    thirdPartySummary: audits["third-party-summary"]?.details,
+                    serverResponseTime: safeNumber(
+                        audits["server-response-time"]?.numericValue
+                    ),
+                    domSize: safeNumber(audits["dom-size"]?.numericValue),
+                    totalByteWeight: safeNumber(
+                        audits["total-byte-weight"]?.numericValue
+                    ),
+                    renderBlockingResources:
+                        audits["render-blocking-resources"]?.details ?? {},
+                    unusedCss: audits["unused-css-rules"]?.details ?? {},
+                    unusedJavascript:
+                        audits["unused-javascript"]?.details ?? {},
+                    networkRequests:
+                        audits["network-requests"]?.details ?? {},
+                    thirdPartySummary:
+                        audits["third-party-summary"]?.details ?? {},
                 }
             };
 
@@ -132,4 +163,4 @@ const worker = new Worker(
     { connection: redis }
 );
 
-export default worker
+export default worker;
