@@ -6,41 +6,215 @@ import * as cheerio from "cheerio";
 import { SeoCheck } from "../../../model/seoChecks.model";
 import { siteSeoQueue } from "../queues";
 
-function extractValue($: cheerio.CheerioAPI, check: any): number {
-    const elements = $(check.selector);
-    if (!elements.length) return 0;
+function getSourceData($: cheerio.CheerioAPI, check: any) {
+    switch (check.source) {
+        case "title":
+            return $("title").text();
 
-    if (check.attribute) {
-        const attrValue = elements.first().attr(check.attribute)?.trim() || "";
-        return attrValue.length;
+        case "meta_description":
+            return $('meta[name="description"]').attr("content") || "";
+
+        case "body":
+            return $("body").text();
+
+        case "headings":
+            return $("h1, h2, h3, h4, h5, h6")
+                .map((_: number, el: any) => $(el).text())
+                .get()
+                .join(" ");
+
+        case "images":
+            return $("img");
+
+        case "anchors":
+        case "internal_links":
+        case "external_links":
+            return $("a[href]");
+
+        case "html":
+        default:
+            return $;
     }
+}
 
-    if (elements.length > 1) {
-        return elements.length;
+function applyOperation(value: any, operation: string, target: any) {
+    switch (operation) {
+        case "includes":
+            return String(value).includes(String(target));
+
+        case "equals":
+            return value === target;
+
+        case "greater_than":
+            return value > target;
+
+        case "less_than":
+            return value < target;
+
+        case "range":
+            return value >= target.min && value <= target.max;
+
+        case "regex":
+            return new RegExp(target).test(String(value));
+
+        default:
+            return false;
     }
+}
 
-    return elements.first().text().trim().length;
+function processCheck($: cheerio.CheerioAPI, check: any, page: any): number {
+    const primaryKeyword =
+        page?.keywords?.[0]?.keyword?.toLowerCase() || "";
+
+    let data = getSourceData($, check);
+
+    if (check.selector) {
+        data = $(check.selector);
+    } else {
+        data = getSourceData($, check);
+    }
+    const getThresholdValue = (key: string, defaultValue: any = null) => {
+        if (!check.thresholds) return defaultValue;
+
+        if (check.thresholds[key] !== undefined) {
+            return check.thresholds[key];
+        }
+
+        if (check.thresholds.min !== undefined || check.thresholds.max !== undefined) {
+            if (key === 'min') return check.thresholds.min || defaultValue;
+            if (key === 'max') return check.thresholds.max || defaultValue;
+        }
+
+        return defaultValue;
+    };
+
+    switch (check.checkType) {
+        case "exists":
+            if (typeof data === "string") return data.trim().length > 0 ? 1 : 0;
+            if (data && typeof (data as any).length === "number") return (data as any).length > 0 ? 1 : 0;
+            return 0;
+
+        case "length_range": {
+            let length = 0;
+
+            if (typeof data === "string") length = data.length;
+            else if (data && typeof (data as any).length === "number") length = (data as any).length;
+
+            const min = getThresholdValue('min', 0);
+            const max = getThresholdValue('max', Infinity);
+            return length >= min && length <= max ? 1 : 0;
+        }
+
+        case "count": {
+            const count = (data && typeof (data as any).length === "number") ? (data as any).length : 0;
+            const target = check.thresholds || check.config?.target;
+            return applyOperation(count, check.operation, target) ? 1 : 0;
+        }
+
+        case "keyword_in_text": {
+            if (typeof data !== "string") return 0;
+            return primaryKeyword && data.toLowerCase().includes(primaryKeyword)
+                ? 1
+                : 0;
+        }
+
+        case "keyword_in_first_n_words": {
+            if (typeof data !== "string") return 0;
+
+            const words = data
+                .replace(/\s+/g, " ")
+                .trim()
+                .split(" ");
+
+            const n = check.config?.wordLimit || 100;
+            const firstWords = words.slice(0, n).join(" ");
+
+            return primaryKeyword && firstWords.includes(primaryKeyword)
+                ? 1
+                : 0;
+        }
+
+        case "percentage_match": {
+            if (!data || typeof (data as any).length !== "number" || (data as any).length === 0) return 0;
+            if (typeof (data as any).each !== "function") return 0;
+
+            let matchCount = 0;
+            const cheerioData = data as any;
+
+            cheerioData.each((index: number, element: any) => {
+                const text = $(element).text().toLowerCase();
+                if (primaryKeyword && text.includes(primaryKeyword)) {
+                    matchCount++;
+                }
+            });
+
+            return matchCount / (cheerioData.length || 1);
+        }
+
+        case "structure": {
+            const headings = $("h1, h2, h3, h4, h5, h6").toArray();
+            let lastLevel = 0;
+
+            for (const el of headings) {
+                const tagName = (el as any).tagName;
+                if (tagName) {
+                    const level = parseInt(tagName[1]);
+                    if (level - lastLevel > 1) return 0;
+                    lastLevel = level;
+                }
+            }
+
+            return 1;
+        }
+
+        case "custom": {
+            if (!check.selector) return 0;
+
+            const elements = $(check.selector);
+            if (!elements.length) return 0;
+
+            if (check.attribute) {
+                const attrValue =
+                    elements.first().attr(check.attribute)?.trim() || "";
+                return attrValue.length > 0 ? 1 : 0;
+            }
+
+            return elements.length > 0 ? 1 : 0;
+        }
+
+        default:
+            return 0;
+    }
 }
 
 function calculateScore(value: number, check: any): number {
+    const getThresholdValue = (key: string, defaultValue: any = null) => {
+        if (!check.thresholds) return defaultValue;
+
+        if (check.thresholds[key] !== undefined) {
+            return check.thresholds[key];
+        }
+
+        if (check.thresholds.min !== undefined || check.thresholds.max !== undefined) {
+            if (key === 'min') return check.thresholds.min || defaultValue;
+            if (key === 'max') return check.thresholds.max || defaultValue;
+        }
+
+        return defaultValue;
+    };
+
     switch (check.scoringType) {
         case "binary":
-            return value > 0 ? 1 : 0;
+            return value > 0 ? check.maxScore : 0;
 
         case "range": {
-            const min = check.thresholds?.min ?? 0;
-            const max = check.thresholds?.max ?? Infinity;
-
-            if (value === 0) return 0;
-            if (value >= min && value <= max) return 1;
-            return 0.5;
+            const min = getThresholdValue('min', 0);
+            const max = getThresholdValue('max', Infinity);
+            return value >= min && value <= max ? check.maxScore : 0;
         }
 
-        case "percentage": {
-            const max = check.thresholds?.max ?? 0;
-            if (!max) return 0;
-            return Math.min(value / max, 1);
-        }
+        case "percentage":
+            return Math.min(value, 1) * check.maxScore;
 
         default:
             return 0;
@@ -66,13 +240,10 @@ const pageSeoWorker = new Worker(
         );
 
         try {
-
             const page = await dbFindOne(DomainPage, { domainPageUrl: url });
-
             if (!page) throw new Error("DomainPage not found");
 
             const $ = cheerio.load(html);
-
             const checks = await dbFind(SeoCheck, { isActive: true });
 
             const perCheckResults: any[] = [];
@@ -80,11 +251,8 @@ const pageSeoWorker = new Worker(
             let totalWeightedScore = 0;
 
             for (const check of checks) {
-                if (!check.selector) continue;
-
-                const value = extractValue($, check);
-                const normalizedScore = calculateScore(value, check);
-
+                const rawValue = processCheck($, check, page);
+                const normalizedScore = calculateScore(rawValue, check);
                 const weightedScore = normalizedScore * check.weight;
 
                 totalWeight += check.weight;
@@ -128,7 +296,6 @@ const pageSeoWorker = new Worker(
             return { success: true, score: finalPercentage };
 
         } catch (error: any) {
-
             await dbUpdate(
                 DomainPage,
                 {

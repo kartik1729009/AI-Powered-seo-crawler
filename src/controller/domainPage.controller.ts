@@ -283,3 +283,103 @@ export async function getDomainPages(req: Request, res: Response) {
         });
     }
 }
+
+export const getPageDetails = async (req: Request, res: Response) => {
+    try {
+        const { _id } = req.body;
+
+        if (!_id || !mongoose.Types.ObjectId.isValid(_id)) {
+            return res.status(400).json({
+                status: "error",
+                message: "Valid page ID is required"
+            });
+        }
+        const page = await DomainPage.findById(_id)
+            .populate("domain", "domainUrl")
+            .populate({
+                path: "perCheckSeoScore.seoCheck",
+                model: "SeoCheck"
+            })
+            .lean();
+
+        if (!page) {
+            return res.status(404).json({
+                status: "error",
+                message: "Page not found"
+            });
+        }
+        const formattedChecks = (page.perCheckSeoScore || []).map((check: any) => {
+            const seoMeta = check.seoCheck || {};
+
+            return {
+                key: seoMeta.key || null,
+                name: seoMeta.name || "Unknown Check",
+                description: seoMeta.description || "",
+                category: seoMeta.category || "",
+                priority: seoMeta.priority || "medium",
+
+                status: check.score === 1 ? "passed" : "failed",
+                passed: check.score === 1,
+
+                score: check.score ?? 0,
+
+                scoringType: seoMeta.scoringType,
+                maxScore: seoMeta.maxScore,
+                thresholds: seoMeta.thresholds || {},
+
+                recommendedAction:
+                    check.score === 1
+                        ? "No action needed"
+                        : `Fix: ${seoMeta.description || "Improve this metric"}`
+            };
+        });
+
+        const safePageDepth =
+            page.pageDepth === undefined || page.pageDepth === null
+                ? 0
+                : page.pageDepth;
+
+        const response = {
+            _id: page._id,
+            domain: page.domain,
+            domainPageUrl: page.domainPageUrl,
+
+            pageDepth: safePageDepth,
+            seoScore: page.seoScore ?? 0,
+            overallScore: page.overallScore ?? 0,
+
+            perCheckSeoScore: formattedChecks,
+
+            keywords: page.keywords || [],
+
+            pageLinks: page.pageLinks || {
+                internalLinks: [],
+                externalLinks: []
+            },
+
+            technicalSeo: page.technicalSeo || {},
+
+            processing: page.processing || {},
+
+            createdAt: page.createdAt,
+            updatedAt: page.updatedAt
+        };
+
+        return apiResponseHandler(res, response);
+
+    } catch (err: any) {
+        loggers.apiLogger.error("getPageDetails route: failed");
+
+        throw new SystemError({
+            message: "Failed to fetch domain page",
+            context: ErrorContext.API,
+            source: "API",
+            severity: ErrorSeverity.MEDIUM,
+            metadata: {
+                operation: "domainPages.fetch",
+                payload: req.body,
+                originalError: err.message
+            }
+        });
+    }
+};

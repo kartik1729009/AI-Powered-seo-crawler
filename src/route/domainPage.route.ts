@@ -1,5 +1,5 @@
 import {Router} from "express"
-import { aiSummary, enqueueUrl, getAiSummaryEndpoint, getDomainPages, getDomainPageStatus } from "../controller/domainPage.controller";
+import { aiSummary, enqueueUrl, getAiSummaryEndpoint, getDomainPages, getDomainPageStatus, getPageDetails } from "../controller/domainPage.controller";
 import { auth } from "../utils/auth";
 import { requiredFields } from "../utils/requiredFields";
 const domainPageRouter = Router();
@@ -8,4 +8,6 @@ domainPageRouter.post("/getDomainPageStatus", auth, requiredFields(["domainPageU
 domainPageRouter.post("/aiSummary", requiredFields(["domainPageId"]), auth, aiSummary)
 domainPageRouter.post("/getDomainPages", auth, getDomainPages)
 domainPageRouter.post("/getAiSummary", auth, getAiSummaryEndpoint);
+domainPageRouter.post("/getPageDetails", getPageDetails);
+
 export default domainPageRouter

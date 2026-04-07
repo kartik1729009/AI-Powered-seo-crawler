@@ -5,7 +5,7 @@ import { DomainPage } from "../../../model/domainPage.model";
 import { dbFind, dbFindOne, dbUpdate } from "../../../utils/dbUtils";
 import mongoose from "mongoose";
 
-const sitemapSeoWorker = new Worker(
+const siteSeoWorker = new Worker(
     "siteSeoQueue",
     async (job: Job) => {
         const { domainId } = job.data;
@@ -146,4 +146,4 @@ const sitemapSeoWorker = new Worker(
     { connection: redis }
 );
 
-export default sitemapSeoWorker;
+export default siteSeoWorker;

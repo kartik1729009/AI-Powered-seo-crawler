@@ -8,8 +8,6 @@ export async function crawlSitemap(url: string, domainId: string) {
     const parser = new XMLParser();
     const json = parser.parse(data);
     const urls = json.urlset.url.map((entry: any) => entry.loc);
-    console.log("extracted urls:");
-    console.log(urls);
     for (const pageUrl of urls) {
         await crawlWebPage(pageUrl, domainId);
     }

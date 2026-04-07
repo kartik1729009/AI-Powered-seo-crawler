@@ -5,9 +5,9 @@ import infoWorker from "./infoQueue.worker";
 import PageWorker from "./pageQueue.worker";
 import technicalSeoWorker from "./technicalSeoQueue.worker"
 import pageSeoWorker from "./pageSeoQueue.worker";
-import sitemapSeoWorker from "./siteSeoQueue.worker";
+import siteSeoWorker from "./siteSeoQueue.worker";
 import aiSummaryQueueWorker from "./aiSummaryQueue.worker";
-import insightsQueueWorker  from "./insightsQueue.worker";
+import insightsQueueWorker from "./insightsQueue.worker";
 import { connectDB } from "../../../config/db";
 
 export async function start() {
@@ -21,7 +21,7 @@ process.on("SIGINT", async () => {
     await infoWorker.close();
     await technicalSeoWorker.close();
     await pageSeoWorker.close();
-    await sitemapSeoWorker.close();
+    await siteSeoWorker.close();
     await aiSummaryQueueWorker.close();
     await insightsQueueWorker.close();
     process.exit(0);

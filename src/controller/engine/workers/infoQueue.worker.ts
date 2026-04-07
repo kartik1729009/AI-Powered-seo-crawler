@@ -47,7 +47,6 @@ function aggregateLinks(links: any[]) {
 const worker = new Worker(
     "infoQueue",
     async (job: Job) => {
-        console.log("Incoming Job:", job.data);
 
         if (!job.data || typeof job.data.url !== "string") {
             throw new Error("Invalid job data. URL must be string.");

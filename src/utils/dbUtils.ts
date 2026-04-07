@@ -137,41 +137,20 @@ export async function dbSave<T>(
     fields: Record<string, unknown>
 ) {
     if (!model || !model.schema) {
-        loggers.dbLogger.error("Invalid model provided to dbSave", { model });
         throw new Error("Invalid model provided");
     }
 
     if (!fields || Object.keys(fields).length === 0) {
-        loggers.dbLogger.warn("No fields provided to save", { model });
         throw new Error("No fields provided to save");
     }
 
     try {
-        const schemaFields = Object.keys(model.schema.paths);
-
-        for (const key of Object.keys(fields)) {
-            if (key === "_id" || key === "__v") continue;
-
-            if (!schemaFields.includes(key)) {
-                loggers.dbLogger.warn("Field not in schema", {
-                    model,
-                    field: key
-                });
-                throw new Error(`Field "${key}" is not defined in schema`);
-            }
-        }
-
+        // ✅ Let mongoose handle validation
         const document = new model(fields);
         await document.save();
         return document;
 
     } catch (err: any) {
-        loggers.dbLogger.error("Error saving document", {
-            error: err,
-            model,
-            fields
-        });
-
         if (err?.code === 11000) {
             throw new Error(
                 "Duplicate key error: " + JSON.stringify(err.keyValue)
