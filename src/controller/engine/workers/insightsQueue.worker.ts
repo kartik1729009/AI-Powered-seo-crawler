@@ -149,7 +149,11 @@ const insightsQueueWorker = new Worker(
             );
         }
     },
-    { connection: redis }
+    { connection: redis,
+        concurrency: 2,
+        autorun: true,
+        stalledInterval: 30000
+     }
 );
 
 export default insightsQueueWorker;

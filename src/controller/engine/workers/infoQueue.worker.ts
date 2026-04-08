@@ -1,8 +1,8 @@
 import { Worker, Job } from "bullmq";
 import dotenv from "dotenv";
 import { redis } from "../../../config/redisConnect";
-import * as loggers from "../../../utils/loggers"
-import { dbFindOne, dbUpdate } from "../../../utils/dbUtils";
+import * as loggers from "../../../utils/loggers";
+import { dbUpdate } from "../../../utils/dbUtils";
 import { DomainPage } from "../../../model/domainPage.model";
 import * as cheerio from "cheerio";
 import { pageSeoQueue, technicalSeoQueue } from "../queues";
@@ -67,7 +67,6 @@ const worker = new Worker(
 
         try {
             const $ = cheerio.load(html);
-
             const baseHost = normalizeHostname(new URL(url).hostname);
 
             const internalLinks: any[] = [];
@@ -75,7 +74,6 @@ const worker = new Worker(
 
             $("a[href]").each((_, element) => {
                 let href = $(element).attr("href");
-
                 if (!href) return;
 
                 href = href.trim();
@@ -85,12 +83,9 @@ const worker = new Worker(
                     href.startsWith("javascript:") ||
                     href.startsWith("mailto:") ||
                     href.startsWith("tel:")
-                ) {
-                    return;
-                }
+                ) return;
 
                 let absoluteUrl: string;
-
                 try {
                     absoluteUrl = new URL(href, url).href;
                 } catch {
@@ -104,17 +99,10 @@ const worker = new Worker(
                 );
 
                 const location = getLocation($, element);
+                const linkData = { url: absoluteUrl, location };
 
-                const linkData = {
-                    url: absoluteUrl,
-                    location,
-                };
-
-                if (linkHost === baseHost) {
-                    internalLinks.push(linkData);
-                } else {
-                    externalLinks.push(linkData);
-                }
+                if (linkHost === baseHost) internalLinks.push(linkData);
+                else externalLinks.push(linkData);
             });
 
             const aggregatedInternal = aggregateLinks(internalLinks);
@@ -122,13 +110,13 @@ const worker = new Worker(
 
             await dbUpdate(
                 DomainPage,
-                { _id: domainId, domainPageUrl: url },
                 {
                     pageLinks: {
                         internalLinks: aggregatedInternal,
                         externalLinks: aggregatedExternal,
                     },
-                }
+                },
+                { domain: domainId, domainPageUrl: url }
             );
 
             await dbUpdate(
@@ -141,22 +129,21 @@ const worker = new Worker(
                 { domain: domainId, domainPageUrl: url }
             );
 
-            const queue = pageSeoQueue;
-            const secondQueue = technicalSeoQueue;
+            loggers.workerLogger.info("infoQueue worker: successful");
 
-            loggers.workerLogger.info("infoQueue worker: successfull")
+            await pageSeoQueue.add(
+                "pageSeoQueue",
+                { domainId, url, html },
+                { attempts: 3, backoff: { type: "exponential", delay: 2000 } }
+            );
 
-            return Promise.all([
-                queue.add("pageSeoQueue", {
-                    domainId,
-                    url,
-                    html
-                }),
-                secondQueue.add("technicalSeo", {
-                    domainId,
-                    url
-                })
-            ]);
+            await technicalSeoQueue.add(
+                "technicalSeo",
+                { domainId, url },
+                { attempts: 3, backoff: { type: "exponential", delay: 2000 } }
+            );
+
+            loggers.workerLogger.info("Jobs pushed to pageSeoQueue and technicalSeoQueue");
 
         } catch (err: any) {
 
@@ -171,9 +158,18 @@ const worker = new Worker(
                 { domain: domainId, domainPageUrl: url }
             );
 
+            loggers.workerLogger.error("infoQueue worker failed", err);
+            throw err;
         }
     },
-    { connection: redis }
+    {
+        connection: redis,
+
+        concurrency: 2,
+        autorun: true,
+        stalledInterval: 30000
+    }
 );
+
 
 export default worker;
